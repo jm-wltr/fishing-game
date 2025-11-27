@@ -677,6 +677,15 @@ function drawUI() {
             fish.reset();
         }
     }
+
+    // Persistent control hint
+    ctx.save();
+    ctx.fillStyle = 'white';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Tap SPACE when the fish dips', 16, height - 16);
+    ctx.restore();
 }
 
 // Minigame Functions
