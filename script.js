@@ -482,43 +482,71 @@ window.addEventListener('resize', resize);
 resize();
 
 // Input Handling
-let spacePressed = false;
+let actionPressed = false;
+
+function handleActionPress() {
+    if (gameState === 'start') {
+        initAudio();
+        gameState = 'playing';
+        message = '';
+    } else if (gameState === 'playing') {
+        if (fish.state === 'BITING') {
+            // Start reeling minigame!
+            gameState = 'reeling';
+            stopGlug();
+            initMinigame();
+        } else {
+            // Fail - Early pull
+            fish.flee();
+            gameState = 'missed';
+            message = 'Too early!';
+            messageTimer = 120;
+        }
+    } else if (gameState === 'caught' || gameState === 'missed') {
+        gameState = 'playing';
+        fish.reset();
+        message = '';
+        messageTimer = 0;
+    }
+}
+
+function pressAction() {
+    if (actionPressed) return;
+    actionPressed = true;
+    handleActionPress();
+}
+
+function releaseAction() {
+    actionPressed = false;
+}
 
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
         e.preventDefault();
-        spacePressed = true;
-
-        if (gameState === 'start') {
-            initAudio();
-            gameState = 'playing';
-            message = '';
-        } else if (gameState === 'playing') {
-            if (fish.state === 'BITING') {
-                // Start reeling minigame!
-                gameState = 'reeling';
-                stopGlug();
-                initMinigame();
-            } else {
-                // Fail - Early pull
-                fish.flee();
-                gameState = 'missed';
-                message = 'Too early!';
-                messageTimer = 120;
-            }
-        } else if (gameState === 'caught' || gameState === 'missed') {
-            gameState = 'playing';
-            fish.reset();
-            message = '';
-            messageTimer = 0;
-        }
+        pressAction();
     }
 });
 
 window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') {
-        spacePressed = false;
+        releaseAction();
     }
+});
+
+window.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // Only left click/tap
+    if (e.target.closest('.diff-btn')) return; // Let UI buttons behave normally
+    pressAction();
+});
+
+window.addEventListener('pointerup', (e) => {
+    if (e.button !== 0) return;
+    releaseAction();
+});
+
+window.addEventListener('pointercancel', releaseAction);
+window.addEventListener('pointerleave', () => {
+    if (actionPressed) releaseAction();
 });
 
 window.addEventListener('click', () => {
@@ -684,7 +712,7 @@ function drawUI() {
     ctx.font = '14px Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('Tap SPACE when the fish dips', 16, height - 16);
+    ctx.fillText('Tap SPACE or click when the fish dips', 16, height - 16);
     ctx.restore();
 }
 
@@ -713,7 +741,7 @@ function updateMinigame() {
     minigame.fishPos += diff * currentDifficulty.fishSpeed;
 
     // Bar Physics
-    if (spacePressed) {
+    if (actionPressed) {
         minigame.barVelocity += BAR_LIFT;
     }
     minigame.barVelocity += GRAVITY;
@@ -839,7 +867,7 @@ function drawMinigame() {
     ctx.fillStyle = 'white';
     ctx.font = '16px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('Hold SPACE', barX + barW / 2, barY - 30);
+    ctx.fillText('Hold SPACE or click', barX + barW / 2, barY - 30);
     ctx.fillText('to lift bar', barX + barW / 2, barY - 10);
 
     // Display current difficulty
