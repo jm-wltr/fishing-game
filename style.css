@@ -1,4 +1,5 @@
-body, html {
+body,
+html {
     margin: 0;
     padding: 0;
     width: 100%;
@@ -9,4 +10,53 @@ body, html {
 
 canvas {
     display: block;
+}
+
+#difficulty-selector {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    z-index: 100;
+    background: rgba(26, 38, 57, 0.8);
+    padding: 10px 15px;
+    border-radius: 8px;
+    border: 2px solid #4da6ff;
+}
+
+.diff-label {
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.diff-btn {
+    background: #1a2639;
+    color: white;
+    border: 2px solid #4da6ff;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.diff-btn:hover {
+    background: #2a3649;
+    transform: translateY(-2px);
+}
+
+.diff-btn.active {
+    background: #4da6ff;
+    color: #1a2639;
+    border-color: #90ee90;
+}
+
+.diff-btn:focus {
+    outline: none;
 }

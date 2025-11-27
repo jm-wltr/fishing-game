@@ -19,6 +19,16 @@ let gameState = 'start'; // start, playing, reeling, caught, missed
 let message = 'Click to Start';
 let messageTimer = 0;
 
+// Difficulty Levels
+const DIFFICULTY = {
+    EASY: { name: 'Easy', barSize: 30, fishSpeed: 0.03, erratic: 0.1, progressLoss: 0.25 },
+    MEDIUM: { name: 'Medium', barSize: 25, fishSpeed: 0.05, erratic: 0.3, progressLoss: 0.3 },
+    HARD: { name: 'Hard', barSize: 20, fishSpeed: 0.08, erratic: 0.5, progressLoss: 0.35 },
+    LEGENDARY: { name: 'Legendary', barSize: 15, fishSpeed: 0.12, erratic: 0.8, progressLoss: 0.4 }
+};
+
+let currentDifficulty = DIFFICULTY.EASY;
+
 // Minigame State
 const GRAVITY = 0.15;
 const BAR_LIFT = -0.3;
@@ -32,9 +42,6 @@ let minigame = {
     barPos: 50, // 0-100
     barVelocity: 0,
     progress: 30, // 0-100
-    barSize: 25,
-    fishSpeed: 0.05,
-    erratic: 0.3
 };
 
 // Audio Context
@@ -187,6 +194,70 @@ function playCatchSound() {
     osc.stop(audioCtx.currentTime + 0.5);
 }
 
+function playReelTick() {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'square';
+    osc.frequency.value = 300;
+
+    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.05);
+}
+
+function playWinMelody() {
+    if (!audioCtx) return;
+    const notes = [523, 659, 784, 1046]; // C, E, G, C
+    notes.forEach((freq, i) => {
+        setTimeout(() => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'square';
+            osc.frequency.value = freq;
+
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        }, i * 100);
+    });
+}
+
+function playLoseSound() {
+    if (!audioCtx) return;
+    const notes = [400, 350, 300];
+    notes.forEach((freq, i) => {
+        setTimeout(() => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sawtooth';
+            osc.frequency.value = freq;
+
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.3);
+        }, i * 300);
+    });
+}
+
 // Fish Class
 class Fish {
     constructor() {
@@ -228,8 +299,8 @@ class Fish {
                         this.y + (Math.random() - 0.5) * 200
                     );
                 }
-                // Occasionally decide to approach
-                if (this.stateTimer > 200 && Math.random() < 0.005) {
+                // Occasionally decide to approach (faster)
+                if (this.stateTimer > 60 && Math.random() < 0.02) {
                     this.state = 'APPROACHING';
                     this.stateTimer = 0;
                 }
@@ -244,14 +315,14 @@ class Fish {
                     // Close enough
                     this.vx *= 0.9;
                     this.vy *= 0.9;
-                    if (Math.random() < 0.02) {
-                        // Decide to nibble or wait
+                    if (Math.random() < 0.05) {
+                        // Decide to nibble or wait (faster decisions)
                         this.state = Math.random() < 0.7 ? 'NIBBLING' : 'APPROACHING';
                         // If we stay approaching, we just hover
                     }
 
-                    // Chance to bite
-                    if (this.stateTimer > 100 && Math.random() < 0.01) {
+                    // Chance to bite (faster)
+                    if (this.stateTimer > 30 && Math.random() < 0.03) {
                         this.state = 'BITING';
                         this.stateTimer = 0;
                         bobber.state = 'submerged';
@@ -412,21 +483,23 @@ window.addEventListener('resize', resize);
 resize();
 
 // Input Handling
+let spacePressed = false;
+
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
+        e.preventDefault();
+        spacePressed = true;
+
         if (gameState === 'start') {
             initAudio();
             gameState = 'playing';
             message = '';
         } else if (gameState === 'playing') {
             if (fish.state === 'BITING') {
-                // Success!
-                gameState = 'caught';
-                message = 'Caught!';
-                messageTimer = 120;
-                bobber.state = 'floating';
+                // Start reeling minigame!
+                gameState = 'reeling';
                 stopGlug();
-                playCatchSound();
+                initMinigame();
             } else {
                 // Fail - Early pull
                 fish.flee();
@@ -434,7 +507,18 @@ window.addEventListener('keydown', (e) => {
                 message = 'Too early!';
                 messageTimer = 120;
             }
+        } else if (gameState === 'caught' || gameState === 'missed') {
+            gameState = 'playing';
+            fish.reset();
+            message = '';
+            messageTimer = 0;
         }
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+        spacePressed = false;
     }
 });
 
@@ -444,6 +528,25 @@ window.addEventListener('click', () => {
         gameState = 'playing';
         message = '';
     }
+});
+
+// Difficulty Selector
+const diffButtons = document.querySelectorAll('.diff-btn');
+diffButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent triggering game start
+
+        // Update UI
+        diffButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update Game State
+        const diffKey = btn.getAttribute('data-diff');
+        currentDifficulty = DIFFICULTY[diffKey];
+
+        // Reset focus so spacebar doesn't trigger button click
+        btn.blur();
+    });
 });
 
 // Simple noise function for water texture
@@ -577,6 +680,166 @@ function drawUI() {
     }
 }
 
+// Minigame Functions
+function initMinigame() {
+    minigame.active = true;
+    minigame.fishPos = 50;
+    minigame.barPos = 50;
+    minigame.barVelocity = 0;
+    minigame.progress = 30;
+    minigame.fishTimer = 0;
+    bobber.state = 'floating';
+}
+
+function updateMinigame() {
+    minigame.fishTimer++;
+
+    // Fish AI - moves to random targets (using current difficulty)
+    if (minigame.fishTimer > (100 - currentDifficulty.erratic * 80)) {
+        minigame.fishTarget = Math.random() * 80 + 10;
+        minigame.fishTimer = 0;
+    }
+
+    // Move fish towards target
+    const diff = minigame.fishTarget - minigame.fishPos;
+    minigame.fishPos += diff * currentDifficulty.fishSpeed;
+
+    // Bar Physics
+    if (spacePressed) {
+        minigame.barVelocity += BAR_LIFT;
+    }
+    minigame.barVelocity += GRAVITY;
+
+    // Clamp velocity
+    minigame.barVelocity = Math.max(-BAR_MAX_SPEED, Math.min(BAR_MAX_SPEED, minigame.barVelocity));
+
+    minigame.barPos += minigame.barVelocity;
+
+    // Bounce off walls
+    if (minigame.barPos < 0) {
+        minigame.barPos = 0;
+        minigame.barVelocity = 0;
+    }
+    if (minigame.barPos > 100 - currentDifficulty.barSize) {
+        minigame.barPos = 100 - currentDifficulty.barSize;
+        minigame.barVelocity = 0;
+    }
+
+    // Check overlap (using current difficulty)
+    const barTop = minigame.barPos;
+    const barBottom = minigame.barPos + currentDifficulty.barSize;
+    const fishTop = minigame.fishPos;
+    const fishBottom = minigame.fishPos + 10;
+
+    const overlap = (fishBottom > barTop && fishTop < barBottom);
+
+    let lastProgress = minigame.progress;
+    if (overlap) {
+        minigame.progress += 0.4;
+    } else {
+        minigame.progress -= currentDifficulty.progressLoss; // Use difficulty-based loss rate
+    }
+
+    // Play tick sound when progress increases
+    if (overlap && Math.floor(minigame.progress / 5) > Math.floor(lastProgress / 5)) {
+        playReelTick();
+    }
+
+    // Win/Loss
+    if (minigame.progress >= 100) {
+        gameState = 'caught';
+        message = 'Caught!';
+        messageTimer = 120;
+        minigame.active = false;
+        playWinMelody();
+    } else if (minigame.progress <= 0) {
+        gameState = 'missed';
+        message = 'It escaped!';
+        messageTimer = 120;
+        minigame.active = false;
+        fish.flee();
+        playLoseSound();
+    }
+}
+
+function drawMinigame() {
+    const barX = width - 150;
+    const barY = 100;
+    const barW = 40;
+    const barH = 400;
+
+    // Background
+    ctx.fillStyle = 'rgba(26, 38, 57, 0.9)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.strokeStyle = '#4da6ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    // Fish indicator
+    const fishY = barY + (minigame.fishPos / 100) * (barH - 30);
+    ctx.save();
+    ctx.translate(barX + barW / 2, fishY + 15);
+    ctx.rotate(Math.PI / 2);
+
+    // Draw fish shape
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.bezierCurveTo(3, -6, -6, -6, -10, 0);
+    ctx.bezierCurveTo(-6, 6, 3, 6, 10, 0);
+    ctx.fill();
+
+    // Tail
+    ctx.beginPath();
+    ctx.moveTo(-10, 0);
+    ctx.lineTo(-15, -5);
+    ctx.lineTo(-15, 5);
+    ctx.fill();
+
+    ctx.restore();
+
+    // Catch Bar (using current difficulty)
+    const barPixelH = (currentDifficulty.barSize / 100) * barH;
+    const catchY = barY + (minigame.barPos / 100) * barH;
+    ctx.fillStyle = 'rgba(144, 238, 144, 0.6)';
+    ctx.fillRect(barX + 2, catchY, barW - 4, barPixelH);
+    ctx.strokeStyle = '#90ee90';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(barX + 2, catchY, barW - 4, barPixelH);
+
+    // Progress Bar
+    const progX = barX + barW + 10;
+    const progY = barY;
+    const progW = 20;
+    const progH = barH;
+
+    ctx.fillStyle = '#1a2639';
+    ctx.fillRect(progX, progY, progW, progH);
+    ctx.strokeStyle = '#4da6ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(progX, progY, progW, progH);
+
+    const fillH = (minigame.progress / 100) * progH;
+    const grad = ctx.createLinearGradient(0, progY + (progH - fillH), 0, progY + progH);
+    grad.addColorStop(0, '#00ff00');
+    grad.addColorStop(1, '#004400');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(progX + 2, progY + (progH - fillH), progW - 4, fillH);
+
+    // Instructions and Difficulty Label
+    ctx.fillStyle = 'white';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Hold SPACE', barX + barW / 2, barY - 30);
+    ctx.fillText('to lift bar', barX + barW / 2, barY - 10);
+
+    // Display current difficulty
+    ctx.font = 'bold 14px Arial';
+    ctx.fillStyle = '#4da6ff';
+    ctx.fillText(currentDifficulty.name, barX + barW / 2, barY + barH + 25);
+}
+
 function loop() {
     time += 0.01;
 
@@ -587,10 +850,19 @@ function loop() {
     if (gameState === 'playing' || gameState === 'missed' || gameState === 'caught') {
         fish.update();
         fish.draw();
+    } else if (gameState === 'reeling') {
+        // Keep fish visible but frozen
+        fish.draw();
+        updateMinigame();
     }
 
     updateWaves();
     drawBobber();
+
+    if (gameState === 'reeling') {
+        drawMinigame();
+    }
+
     drawUI();
 
     requestAnimationFrame(loop);
