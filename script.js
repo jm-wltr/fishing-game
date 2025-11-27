@@ -15,9 +15,177 @@ const bobber = {
 
 const waves = [];
 let fish = null;
-let gameState = 'playing'; // playing, caught, missed
-let message = '';
+let gameState = 'start'; // start, playing, reeling, caught, missed
+let message = 'Click to Start';
 let messageTimer = 0;
+
+// Minigame State
+const GRAVITY = 0.15;
+const BAR_LIFT = -0.3;
+const BAR_MAX_SPEED = 4;
+
+let minigame = {
+    active: false,
+    fishPos: 50, // 0-100
+    fishTarget: 50,
+    fishTimer: 0,
+    barPos: 50, // 0-100
+    barVelocity: 0,
+    progress: 30, // 0-100
+    barSize: 25,
+    fishSpeed: 0.05,
+    erratic: 0.3
+};
+
+// Audio Context
+let audioCtx;
+let ambientNode;
+let tailNode;
+let tailGain;
+let glugInterval;
+
+function initAudio() {
+    if (audioCtx) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioContext();
+
+    // Ambient Water Sound (Pink Noise + Lowpass)
+    const bufferSize = 2 * audioCtx.sampleRate;
+    const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    let lastOut = 0;
+    for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        output[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = output[i];
+        output[i] *= 3.5;
+    }
+
+    ambientNode = audioCtx.createBufferSource();
+    ambientNode.buffer = noiseBuffer;
+    ambientNode.loop = true;
+
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 400;
+
+    // Modulate filter for wave effect
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 0.1;
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.value = 200;
+
+    osc.connect(oscGain);
+    oscGain.connect(filter.frequency);
+    osc.start();
+
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.1;
+
+    ambientNode.connect(filter);
+    filter.connect(masterGain);
+    masterGain.connect(audioCtx.destination);
+    ambientNode.start();
+
+    // Tail Swish Sound (Bubbly chirps)
+    // Create a buffer with multiple bubble chirps
+    const tailBufferSize = audioCtx.sampleRate * 2;
+    const tailBuffer = audioCtx.createBuffer(1, tailBufferSize, audioCtx.sampleRate);
+    const tailData = tailBuffer.getChannelData(0);
+
+    // Generate multiple bubble chirps throughout the buffer
+    for (let chirp = 0; chirp < 20; chirp++) {
+        const startSample = Math.floor((chirp / 20) * tailBufferSize);
+        const chirpLength = Math.floor(audioCtx.sampleRate * 0.05); // 50ms chirps
+
+        for (let i = 0; i < chirpLength; i++) {
+            const t = i / audioCtx.sampleRate;
+            // Frequency drops from 800 to 200 Hz
+            const freq = 800 - (600 * (i / chirpLength));
+            const envelope = Math.sin((i / chirpLength) * Math.PI); // Smooth envelope
+            tailData[startSample + i] = Math.sin(2 * Math.PI * freq * t) * envelope * 0.3;
+        }
+    }
+
+    tailNode = audioCtx.createBufferSource();
+    tailNode.buffer = tailBuffer;
+    tailNode.loop = true;
+
+    tailGain = audioCtx.createGain();
+    tailGain.gain.value = 0;
+
+    tailNode.connect(tailGain);
+    tailGain.connect(audioCtx.destination);
+    tailNode.start();
+}
+
+function playBubble() {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400 + Math.random() * 200, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.1);
+}
+
+function startGlug() {
+    if (glugInterval) return;
+    glugInterval = setInterval(() => {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(200 + Math.random() * 50, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }, 150);
+}
+
+function stopGlug() {
+    if (glugInterval) {
+        clearInterval(glugInterval);
+        glugInterval = null;
+    }
+}
+
+function playCatchSound() {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.2);
+
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.5);
+}
 
 // Fish Class
 class Fish {
@@ -88,6 +256,7 @@ class Fish {
                         this.stateTimer = 0;
                         bobber.state = 'submerged';
                         bobber.submergeTime = time;
+                        startGlug();
                     }
                 }
                 break;
@@ -98,6 +267,7 @@ class Fish {
                     // Dart in
                     this.vx = (bobber.x - this.x) * 0.1;
                     this.vy = (bobber.y - this.y) * 0.1;
+                    playBubble();
                 }
                 if (this.stateTimer === 10) {
                     // Dart out
@@ -122,12 +292,13 @@ class Fish {
                 this.y += (Math.random() - 0.5) * 5;
 
                 // Timeout - Missed fish
-                if (this.stateTimer > 30) { // 0.5 seconds (at 60fps)
+                if (this.stateTimer > 30 && gameState === 'playing') { // 0.5 seconds (at 60fps)
                     this.flee();
                     gameState = 'missed';
                     message = 'Too slow!';
                     messageTimer = 120;
                     bobber.state = 'floating';
+                    stopGlug();
                 }
                 break;
 
@@ -168,6 +339,12 @@ class Fish {
 
         // Tail animation
         this.tailAngle = Math.sin(time * (10 + speed * 5)) * (0.5 + speed * 0.2);
+
+        // Update Tail Sound
+        if (tailGain) {
+            // Map speed (0-8) to gain (0-0.2)
+            tailGain.gain.setTargetAtTime(Math.min(speed * 0.03, 0.3), audioCtx.currentTime, 0.1);
+        }
     }
 
     setTarget(tx, ty) {
@@ -181,6 +358,7 @@ class Fish {
         this.state = 'FLEEING';
         this.stateTimer = 0;
         bobber.state = 'floating';
+        stopGlug();
     }
 
     draw() {
@@ -236,15 +414,19 @@ resize();
 // Input Handling
 window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
-        if (gameState === 'playing') {
+        if (gameState === 'start') {
+            initAudio();
+            gameState = 'playing';
+            message = '';
+        } else if (gameState === 'playing') {
             if (fish.state === 'BITING') {
                 // Success!
                 gameState = 'caught';
                 message = 'Caught!';
                 messageTimer = 120;
                 bobber.state = 'floating';
-                // Reset fish immediately or show catch animation?
-                // For now, reset after message
+                stopGlug();
+                playCatchSound();
             } else {
                 // Fail - Early pull
                 fish.flee();
@@ -252,9 +434,15 @@ window.addEventListener('keydown', (e) => {
                 message = 'Too early!';
                 messageTimer = 120;
             }
-        } else if (gameState === 'caught' || gameState === 'missed') {
-            // Reset manually if needed, but we have timers
         }
+    }
+});
+
+window.addEventListener('click', () => {
+    if (gameState === 'start') {
+        initAudio();
+        gameState = 'playing';
+        message = '';
     }
 });
 
@@ -368,7 +556,14 @@ function updateWaves() {
 }
 
 function drawUI() {
-    if (messageTimer > 0) {
+    if (gameState === 'start') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = 'white';
+        ctx.font = '40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(message, width / 2, height / 2);
+    } else if (messageTimer > 0) {
         ctx.fillStyle = 'white';
         ctx.font = '40px Arial';
         ctx.textAlign = 'center';
@@ -389,7 +584,7 @@ function loop() {
 
     drawWater();
 
-    if (gameState === 'playing' || gameState === 'missed') {
+    if (gameState === 'playing' || gameState === 'missed' || gameState === 'caught') {
         fish.update();
         fish.draw();
     }
