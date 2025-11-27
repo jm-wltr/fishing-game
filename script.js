@@ -21,10 +21,9 @@ let messageTimer = 0;
 
 // Difficulty Levels
 const DIFFICULTY = {
-    EASY: { name: 'Easy', barSize: 30, fishSpeed: 0.03, erratic: 0.1, progressLoss: 0.25 },
-    MEDIUM: { name: 'Medium', barSize: 25, fishSpeed: 0.05, erratic: 0.3, progressLoss: 0.3 },
-    HARD: { name: 'Hard', barSize: 20, fishSpeed: 0.08, erratic: 0.5, progressLoss: 0.35 },
-    LEGENDARY: { name: 'Legendary', barSize: 15, fishSpeed: 0.12, erratic: 0.8, progressLoss: 0.4 }
+    EASY: { name: 'Easy', barSize: 25, fishSpeed: 0.05, erratic: 0.3, progressLoss: 0.3 }, // Was Medium
+    MEDIUM: { name: 'Medium', barSize: 20, fishSpeed: 0.08, erratic: 0.5, progressLoss: 0.35 }, // Was Hard
+    HARD: { name: 'Hard', barSize: 15, fishSpeed: 0.1, erratic: 0.5, progressLoss: 0.4 } // Hybrid: Medium speed, Legendary bar
 };
 
 let currentDifficulty = DIFFICULTY.EASY;
